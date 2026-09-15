@@ -198,7 +198,7 @@
       </div>
       <div>
         <label for="sust-t-phone">Teléfono (9 dígitos)</label>
-        <input type="tel" id="sust-t-phone" inputmode="numeric" maxlength="9" placeholder="600111222">
+        <input type="tel" id="sust-t-phone" placeholder="600111222" inputmode="numeric" maxlength="9">
       </div>
     </div>
     <button class="btn-ghost" id="sust-add-teacher">Añadir profesor/a</button>
@@ -270,27 +270,44 @@
     setTimeout(() => { el.innerHTML = ''; }, 5000);
   }
 
-  // ---------- Persistent storage ----------
+  // ---------- Persistencia ----------
+  // El profesorado se guarda en Supabase para que esté disponible
+  // tanto en el ordenador como en el móvil. El registro de sustituciones
+  // se mantiene local en este navegador.
   async function loadTeachers() {
     try {
-      const { data, error } = await supabaseClient.from('profesores').select('id,nombre,teléfono').order('nombre');
+      const { data, error } = await supabaseClient
+        .from('profesores')
+        .select('id,nombre,teléfono')
+        .order('nombre', { ascending: true });
       if (error) throw error;
-      teachers = (data || []).map(t => ({ id: t.id, nombre: t.nombre, telefono: String(t['teléfono'] ?? '') }));
+      teachers = (data || []).map(t => ({
+        id: t.id,
+        nombre: t.nombre,
+        telefono: String(t['teléfono'] ?? '')
+      }));
     } catch (e) {
-      console.error(e);
+      console.error('Error cargando profesorado:', e);
       teachers = [];
-      showMsg('No se pudo cargar el profesorado desde Supabase.', true);
+      showMsg('No se pudo cargar el profesorado desde la base de datos.', true);
     }
     renderTeachers();
   }
+
   async function loadSubs() {
-    try { const raw = localStorage.getItem('sust:registro'); subs = raw ? JSON.parse(raw) : []; }
-    catch (e) { subs = []; }
+    try {
+      const raw = localStorage.getItem('sust:registro');
+      subs = raw ? JSON.parse(raw) : [];
+    } catch (e) { subs = []; }
     renderSubs();
   }
+
   async function saveSubs() {
-    try { localStorage.setItem('sust:registro', JSON.stringify(subs)); }
-    catch (e) { showMsg('No se pudo guardar el registro.', true); }
+    try {
+      localStorage.setItem('sust:registro', JSON.stringify(subs));
+    } catch (e) {
+      showMsg('No se pudo guardar el registro.', true);
+    }
   }
 
   // ---------- Profesorado ----------
@@ -302,11 +319,21 @@
       '<button class="btn-red" data-i="' + i + '" style="padding:3px 8px;font-size:0.75rem;">Eliminar</button></div>'
     ).join('');
     list.querySelectorAll('button').forEach(b => b.addEventListener('click', async (e) => {
-      const i = parseInt(e.target.dataset.i, 10), teacher = teachers[i];
-      if (!teacher?.id) { showMsg('No se puede eliminar este profesor.', true); return; }
-      const { error } = await supabaseClient.from('profesores').delete().eq('id', teacher.id);
-      if (error) { console.error(error); showMsg('No se pudo eliminar el profesor.', true); return; }
-      teachers.splice(i, 1); renderTeachers();
+      const i = parseInt(e.target.dataset.i, 10);
+      const teacher = teachers[i];
+      if (!teacher || teacher.id == null) {
+        showMsg('No se puede eliminar este profesor.', true);
+        return;
+      }
+      try {
+        const { error } = await supabaseClient.from('profesores').delete().eq('id', teacher.id);
+        if (error) throw error;
+        teachers.splice(i, 1);
+        renderTeachers();
+      } catch (err) {
+        console.error('Error eliminando profesor:', err);
+        showMsg('No se pudo eliminar el profesor.', true);
+      }
     }));
   }
   $('sust-add-teacher').addEventListener('click', async () => {
@@ -314,15 +341,32 @@
     const telefono = $('sust-t-phone').value.trim().replace(/\s+/g, '');
     if (!nombre || !telefono) { showMsg('Falta nombre o teléfono.', true); return; }
     if (!/^\d{9}$/.test(telefono)) { showMsg('El teléfono debe tener exactamente 9 dígitos.', true); return; }
-    const button = $('sust-add-teacher'); button.disabled = true;
+
+    const button = $('sust-add-teacher');
+    button.disabled = true;
     try {
-      const { data, error } = await supabaseClient.from('profesores').insert({ nombre, 'teléfono': telefono }).select('id,nombre,teléfono').single();
+      const { data, error } = await supabaseClient
+        .from('profesores')
+        .insert({ nombre: nombre, 'teléfono': telefono })
+        .select('id,nombre,teléfono')
+        .single();
       if (error) throw error;
-      teachers.push({ id: data.id, nombre: data.nombre, telefono: String(data['teléfono'] ?? '') });
-      $('sust-t-name').value = ''; $('sust-t-phone').value = ''; renderTeachers();
+
+      teachers.push({
+        id: data.id,
+        nombre: data.nombre,
+        telefono: String(data['teléfono'] ?? '')
+      });
+      $('sust-t-name').value = '';
+      $('sust-t-phone').value = '';
+      renderTeachers();
       showMsg('Profesor/a añadido/a correctamente.', false);
-    } catch (e) { console.error(e); showMsg('No se pudo guardar el profesor. Revisa los permisos de Supabase.', true); }
-    finally { button.disabled = false; }
+    } catch (e) {
+      console.error('Error añadiendo profesor:', e);
+      showMsg('No se pudo guardar el profesor en Supabase. Revisa las políticas de la tabla.', true);
+    } finally {
+      button.disabled = false;
+    }
   });
 
   function findPhone(name) {
