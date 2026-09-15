@@ -292,6 +292,9 @@
       showMsg('No se pudo cargar el profesorado desde la base de datos.', true);
     }
     renderTeachers();
+    // El registro puede haberse pintado antes de que termine la consulta a Supabase.
+    // Lo repintamos ahora para que aparezcan los botones de WhatsApp.
+    renderSubs();
   }
 
   async function loadSubs() {
@@ -360,6 +363,7 @@
       $('sust-t-name').value = '';
       $('sust-t-phone').value = '';
       renderTeachers();
+      renderSubs();
       showMsg('Profesor/a añadido/a correctamente.', false);
     } catch (e) {
       console.error('Error añadiendo profesor:', e);
